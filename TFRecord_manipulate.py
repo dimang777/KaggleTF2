@@ -6,6 +6,10 @@ import os
 import numpy as np
 import IPython.display as display
 import json
+from gzip import GzipFile
+import collections
+
+
 
 # Load one example
 os.chdir('C:/Users/diman/Documents/Kaggle 2019 Data/tensorflow2')
@@ -14,13 +18,56 @@ with open('simplified-nq-train_one.jsonl') as f:
     line = f.readline()
     example_data = json.loads(line)[0]
 
+# Keys in an example
 example_data.keys()
+
+
+example_id = example_data['example_id']
+
+# annotations which is another dict
+for annotation in example_data['annotations']:
+    long_span_rec = annotation['long_answer']
+    long_span_rec['start_byte']
+    long_span_rec['end_byte'],
+    long_span_rec['start_token']
+    long_span_rec['end_token']
+
+    short_span_list = []
+    for short_span_rec in annotation['short_answers']:
+        
+        short_span_rec['start_byte']
+        short_span_rec['end_byte']
+        short_span_rec['start_token']
+        short_span_rec['end_token']
+        
+# The rest of the items
 example_data['document_text']
 example_data['long_answer_candidates']
 example_data['question_text']
-example_data['annotations']
 example_data['document_url']
-example_data['example_id']
+
+
+
+# Data format - for reference
+
+example_id = example_data['example_id']
+
+# Annotations which is a list of dict
+example_data['annotations'] # A list
+# In each dict
+example_data['annotations'][0]['start_token']
+example_data['annotations'][0]['end_token']
+
+# Short answers which is a list of dict in annotations
+example_data['annotations'][0]['short_answers']
+example_data['annotations'][0]['short_answers'][0]['start_token']
+example_data['annotations'][0]['short_answers'][0]['end_token']
+
+example_data['document_text']
+example_data['long_answer_candidates']
+example_data['question_text']
+example_data['document_url']
+
 
 
 
