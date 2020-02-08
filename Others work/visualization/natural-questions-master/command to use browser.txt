@@ -1,0 +1,13 @@
+python nq_browser.py --nq_jsonl=v1.0_sample_nq-train-sample.jsonl.gz --max_examples=10
+
+python nq_browser.py --nq_jsonl=nq-train-sample.jsonl --max_examples=10
+
+python nq_browser.py --nq_jsonl=v1.0_sample_nq-train-sample.jsonl.gz
+
+python nq_browser --nq_jsonl=nq-train-sample.jsonl --dataset=dev --port=8081
+
+python nq_browser.py --nq_jsonl=../input/v1.0_sample_nq-train-sample.jsonl --nogzipped --max_examples=10
+
+THIS WORKED!!! 
+AFTER PUTTING THE FILE IN THE ../input/
+python nq_browser.py --nq_jsonl=../input/nq-train-sample.jsonl --nogzipped --max_examples=10

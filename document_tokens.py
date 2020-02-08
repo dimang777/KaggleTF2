@@ -14,5 +14,9 @@ def document_tokens(document_text):
     document_textsplit = document_text.split(" ")
     document_tokens = []
     for token in document_textsplit:
-        document_tokens.append({"token":token, "start_byte":-1, "end_byte":-1, "html_token":"<" in token})
+        document_tokens.append({"token": token,
+                                "start_byte": -1,
+                                "end_byte": -1,
+                                "html_token": "<" in token})
 
+    return document_tokens
