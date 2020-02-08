@@ -205,6 +205,12 @@ def no_document_title(e):
         e["document_title"] = e["example_id"]
     return e
 
+# Modified - Isaac
+def no_annotations(e):
+    if "annotations" not in e:
+        e["annotations"] = []
+    return e
+
 class AnswerType(enum.IntEnum):
   """Type of NQ answer."""
   UNKNOWN = 0
@@ -475,6 +481,8 @@ def create_example_from_jsonl_mod(line):
   e = json.loads(line, object_pairs_hook=collections.OrderedDict)
   # Modified - Isaac
   e = document_tokens(e)
+  # Modified - Isaac
+  e = no_annotations(e)
   
   add_candidate_types_and_positions(e)
   annotation, annotated_idx, annotated_sa = get_first_annotation(e)
@@ -757,7 +765,9 @@ def convert_single_example(example, tokenizer, is_training):
     tokens.append("[SEP]")
     segment_ids.append(0)
 
-    for i in xrange(doc_span.length):
+    # Modified - Isaac
+    # for i in xrange(doc_span.length):
+    for i in range(doc_span.length):
       split_token_index = doc_span.start + i
       token_to_orig_map[len(tokens)] = tok_to_orig_index[split_token_index]
       tokens.append(all_doc_tokens[split_token_index])
@@ -906,7 +916,9 @@ class CreateTFExampleFn(object):
             [input_feature.answer_type])
       else:
         token_map = [-1] * len(input_feature.input_ids)
-        for k, v in input_feature.token_to_orig_map.iteritems():
+        # Modified - Isaac
+        # for k, v in input_feature.token_to_orig_map.iteritems():
+        for k, v in input_feature.token_to_orig_map.items():
           token_map[k] = v
         features["token_map"] = create_int_feature(token_map)
 
@@ -1244,7 +1256,9 @@ class FeatureWriter(object):
       features["answer_types"] = create_int_feature([feature.answer_type])
     else:
       token_map = [-1] * len(feature.input_ids)
-      for k, v in feature.token_to_orig_map.iteritems():
+      # Modified - Isaac
+      # for k, v in feature.token_to_orig_map.iteritems():
+      for k, v in feature.token_to_orig_map.items():
         token_map[k] = v
       features["token_map"] = create_int_feature(token_map)
 
@@ -1315,7 +1329,9 @@ def compute_predictions(example):
   n_best_size = 10
   max_answer_length = 30
 
-  for unique_id, result in example.results.iteritems():
+  # Modified - Isaac
+  # for unique_id, result in example.results.iteritems():
+  for unique_id, result in example.results.items():    
     if unique_id not in example.features:
       raise ValueError("No feature found with unique_id:", unique_id)
     token_map = example.features[unique_id]["token_map"].int64_list.value
@@ -1552,7 +1568,9 @@ def main(_):
     tf.logging.info("  Num orig examples = %d", len(eval_examples))
     tf.logging.info("  Num split examples = %d", len(eval_features))
     tf.logging.info("  Batch size = %d", FLAGS.predict_batch_size)
-    for spans, ids in num_spans_to_ids.iteritems():
+    # Modified - Isaac
+    # for spans, ids in num_spans_to_ids.iteritems():
+    for spans, ids in num_spans_to_ids.items():
       tf.logging.info("  Num split into %d = %d", spans, len(ids))
 
     predict_input_fn = input_fn_builder(
