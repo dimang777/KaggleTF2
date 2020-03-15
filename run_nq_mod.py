@@ -1301,6 +1301,21 @@ def read_candidates_from_one_split(input_path):
       candidates_dict[e["example_id"]] = e["long_answer_candidates"]
   return candidates_dict
 
+def read_candidates_from_one_split_mod(input_path):
+  """Read candidates from a single jsonl file."""
+  candidates_dict = {}
+  if input_path.endswith(".gz"):
+    with gzip.GzipFile(fileobj=tf.gfile.Open(input_path)) as input_file:
+      tf.logging.info("Reading examples from: %s", input_path)
+      for line in input_file:
+        e = json.loads(line)
+        candidates_dict[e["example_id"]] = e["long_answer_candidates"]
+  else:
+    with tf.io.gfile.GFile(input_path, "r") as input_file:
+      for index, line in enumerate(input_file):
+        e = json.loads(line)
+        candidates_dict[e["example_id"]] = e["long_answer_candidates"]
+  return candidates_dict
 
 def read_candidates(input_pattern):
   """Read candidates with real multiple processes."""
@@ -1310,6 +1325,13 @@ def read_candidates(input_pattern):
     final_dict.update(read_candidates_from_one_split(input_path))
   return final_dict
 
+def read_candidates_mod(input_pattern):
+  """Read candidates with real multiple processes."""
+  input_paths = tf.gfile.Glob(input_pattern)
+  final_dict = {}
+  for input_path in input_paths:
+    final_dict.update(read_candidates_from_one_split_mod(input_path))
+  return final_dict
 
 def get_best_indexes(logits, n_best_size):
   """Get the n-best logits from a list."""
@@ -1445,6 +1467,61 @@ def compute_pred_dict(candidates_dict, dev_features, raw_results):
 
   return nq_pred_dict
 
+def compute_pred_dict_mod(candidates_dict, dev_features, raw_results):
+  # Changes adapted from bert_utils.py
+  """Computes official answer key from raw logits."""
+  # raw_results_by_id = [(int(res["unique_id"] + 1), res) for res in raw_results]
+  raw_results_by_id = [(int(res.unique_id),1, res) for res in raw_results]
+  
+  # Cast example id to int32 for each example, similarly to the raw results.
+  # sess = tf.Session()
+  # all_candidates = candidates_dict.items()
+  # example_ids = tf.to_int32(np.array([int(k) for k, _ in all_candidates
+  #                                    ])).eval(session=sess)
+  # examples_by_id = zip(example_ids, all_candidates)
+  examples_by_id = [(int(k),0,v) for k, v in candidates_dict.items()]
+
+  # Cast unique_id also to int32 for features.
+  # feature_ids = []
+  # features = []
+  # for f in dev_features:
+  #   feature_ids.append(f.features.feature["unique_ids"].int64_list.value[0] + 1)
+  #   features.append(f.features.feature)
+  # feature_ids = tf.to_int32(np.array(feature_ids)).eval(session=sess)
+  # features_by_id = zip(feature_ids, features)
+  features_by_id = [(int(d['unique_id']),2,d) for d in dev_features] 
+
+  # Join examplew with features and raw results.
+  examples = []
+  merged = sorted(examples_by_id + raw_results_by_id + features_by_id)
+  # for idx, datum in merged:
+  #   if isinstance(datum, tuple):
+  #     examples.append(EvalExample(datum[0], datum[1]))
+  #   elif "token_map" in datum:
+  #     examples[-1].features[idx] = datum
+  #   else:
+  #     examples[-1].results[idx] = datum
+  for idx, type_, datum in merged:
+        if type_==0: #isinstance(datum, list):
+            examples.append(EvalExample(idx, datum))
+        elif type_==2: #"token_map" in datum:
+            examples[-1].features[idx] = datum
+        else:
+            examples[-1].results[idx] = datum
+
+  # Construct prediction objects.
+  tf.logging.info("Computing predictions...")
+  summary_dict = {}
+  nq_pred_dict = {}
+  for e in examples:
+    summary = compute_predictions(e)
+    summary_dict[e.example_id] = summary
+    nq_pred_dict[e.example_id] = summary.predicted_label
+    if len(nq_pred_dict) % 100 == 0:
+      tf.logging.info("Examples processed: %d", len(nq_pred_dict))
+  tf.logging.info("Done computing predictions.")
+
+  return nq_pred_dict
 
 def validate_flags_or_throw(bert_config):
   """Validate the input FLAGS or throw an exception."""
