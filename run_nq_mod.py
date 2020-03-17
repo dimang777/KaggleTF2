@@ -26,15 +26,28 @@ import random
 import re
 
 import enum
-from bert import modeling
-from bert import optimization
-from bert import tokenization
+# Original - TF1
+# from bert import modeling
+# from bert import optimization
+# from bert import tokenization
+
+# TF2
+import bert_modeling as modeling
+import bert_optimization as optimization
+import bert_tokenization as tokenization
+
 import numpy as np
 import tensorflow as tf
-from tensorflow.contrib import cluster_resolver as contrib_cluster_resolver
-from tensorflow.contrib import tpu as contrib_tpu
+# Original - TF1
+# from tensorflow.contrib import cluster_resolver as contrib_cluster_resolver
+# from tensorflow.contrib import tpu as contrib_tpu
 
-flags = tf.flags
+import absl
+
+# Original - TF1
+# flags = tf.flags
+# TF2 - either use tf.compat.v1.flags or absl
+flags = absl.flags #TF2 (or could be used for tf1 too if tried)
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string(
@@ -130,25 +143,25 @@ flags.DEFINE_float(
 
 flags.DEFINE_bool("use_tpu", False, "Whether to use TPU or GPU/CPU.")
 
-tf.flags.DEFINE_string(
+flags.DEFINE_string(
     "tpu_name", None,
     "The Cloud TPU to use for training. This should be either the name "
     "used when creating the Cloud TPU, or a grpc://ip.address.of.tpu:8470 "
     "url.")
 
-tf.flags.DEFINE_string(
+flags.DEFINE_string(
     "tpu_zone", None,
     "[Optional] GCE zone where the Cloud TPU is located in. If not "
     "specified, we will attempt to automatically detect the GCE project from "
     "metadata.")
 
-tf.flags.DEFINE_string(
+flags.DEFINE_string(
     "gcp_project", None,
     "[Optional] Project name for the Cloud TPU-enabled project. If not "
     "specified, we will attempt to automatically detect the GCE project from "
     "metadata.")
 
-tf.flags.DEFINE_string("master", None, "[Optional] TensorFlow master URL.")
+flags.DEFINE_string("master", None, "[Optional] TensorFlow master URL.")
 
 flags.DEFINE_integer(
     "num_tpu_cores", 8,
@@ -338,7 +351,7 @@ def get_candidate_type(e, idx):
   elif first_token in ("<Tr>", "<Li>", "<Dd>", "<Dt>"):
     return "Other"
   else:
-    tf.logging.warning("Unknoww candidate type found: %s", first_token)
+    absl.logging.warning("Unknoww candidate type found: %s", first_token)
     return "Other"
 
 
@@ -663,7 +676,7 @@ def read_nq_entry(entry, is_training):
       cleaned_answer_text = " ".join(
           tokenization.whitespace_tokenize(answer.text))
       if actual_text.find(cleaned_answer_text) == -1:
-        tf.logging.warning("Could not find answer: '%s' vs. '%s'", actual_text,
+        absl.logging.warning("Could not find answer: '%s' vs. '%s'", actual_text,
                            cleaned_answer_text)
         continue
 
@@ -966,7 +979,7 @@ def read_nq_examples(input_file, is_training):
       return tf.gfile.Open(path, "r")
 
   for path in input_paths:
-    tf.logging.info("Reading: %s", path)
+    absl.logging.info("Reading: %s", path)
     with _open(path) as input_file:
       for line in input_file:
         input_data.append(create_example_from_jsonl(line))
@@ -979,17 +992,20 @@ def read_nq_examples(input_file, is_training):
 # Modified - Isaac
 def read_nq_examples_mod(input_file, is_training):
   """Read a NQ json file into a list of NqExample."""
-  input_paths = tf.gfile.Glob(input_file)
+  # input_paths = tf.gfile.Glob(input_file) # TF1
+  input_paths = tf.io.gfile.glob(input_file) # TF2
   input_data = []
 
   def _open(path):
     if path.endswith(".gz"):
-      return gzip.GzipFile(fileobj=tf.gfile.Open(path, "r"))
+      # return gzip.GzipFile(fileobj=tf.gfile.Open(path, "r")) # TF1
+      return gzip.GzipFile(fileobj=tf.io.gfile.GFile(path, "rb")) # TF2
     else:
-      return tf.gfile.Open(path, "r")
+      # return tf.gfile.Open(path, "r") # TF1
+      return tf.io.gfile.GFile(path, "rb") # TF2
 
   for path in input_paths:
-    tf.logging.info("Reading: %s", path)
+    absl.logging.info("Reading: %s", path)
     with _open(path) as input_file:
       for line in input_file:
         # Modified - Isaac
@@ -1067,9 +1083,9 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
   def model_fn(features, labels, mode, params):  # pylint: disable=unused-argument
     """The `model_fn` for TPUEstimator."""
 
-    tf.logging.info("*** Features ***")
+    absl.logging.info("*** Features ***")
     for name in sorted(features.keys()):
-      tf.logging.info("  name = %s, shape = %s" % (name, features[name].shape))
+      absl.logging.info("  name = %s, shape = %s" % (name, features[name].shape))
 
     unique_ids = features["unique_ids"]
     input_ids = features["input_ids"]
@@ -1103,12 +1119,12 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
       else:
         tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
 
-    tf.logging.info("**** Trainable Variables ****")
+    absl.logging.info("**** Trainable Variables ****")
     for var in tvars:
       init_string = ""
       if var.name in initialized_variable_names:
         init_string = ", *INIT_FROM_CKPT*"
-      tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
+      absl.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
                       init_string)
 
     output_spec = None
@@ -1142,16 +1158,35 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
       answer_type_loss = compute_label_loss(answer_type_logits, answer_types)
 
       total_loss = (start_loss + end_loss + answer_type_loss) / 3.0
+      # Original - TF1
+    #   train_op = optimization.create_optimizer(total_loss, learning_rate,
+    #                                            num_train_steps,
+    #                                            num_warmup_steps, use_tpu)
 
-      train_op = optimization.create_optimizer(total_loss, learning_rate,
+    #   output_spec = contrib_tpu.TPUEstimatorSpec(
+    #       mode=mode,
+    #       loss=total_loss,
+    #       train_op=train_op,
+    #       scaffold_fn=scaffold_fn)
+    # elif mode == tf.estimator.ModeKeys.PREDICT:
+    #   predictions = {
+    #       "unique_ids": unique_ids,
+    #       "start_logits": start_logits,
+    #       "end_logits": end_logits,
+    #       "answer_type_logits": answer_type_logits,
+    #   }
+    #   output_spec = contrib_tpu.TPUEstimatorSpec(
+    #       mode=mode, predictions=predictions, scaffold_fn=scaffold_fn)
+      train_op = optimization.create_optimizer(learning_rate,
                                                num_train_steps,
-                                               num_warmup_steps, use_tpu)
+                                               num_warmup_steps)      
 
-      output_spec = contrib_tpu.TPUEstimatorSpec(
+      output_spec = tf.estimator.EstimatorSpec(
           mode=mode,
           loss=total_loss,
           train_op=train_op,
-          scaffold_fn=scaffold_fn)
+          scaffold=scaffold_fn)
+        
     elif mode == tf.estimator.ModeKeys.PREDICT:
       predictions = {
           "unique_ids": unique_ids,
@@ -1159,8 +1194,8 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           "end_logits": end_logits,
           "answer_type_logits": answer_type_logits,
       }
-      output_spec = contrib_tpu.TPUEstimatorSpec(
-          mode=mode, predictions=predictions, scaffold_fn=scaffold_fn)
+      output_spec = tf.estimator.EstimatorSpec(
+          mode=mode, predictions=predictions, scaffold=scaffold_fn)
     else:
       raise ValueError("Only TRAIN and PREDICT modes are supported: %s" %
                        (mode))
@@ -1173,28 +1208,43 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
 def input_fn_builder(input_file, seq_length, is_training, drop_remainder):
   """Creates an `input_fn` closure to be passed to TPUEstimator."""
 
+  # TF1
+  # name_to_features = {
+  #     "unique_ids": tf.FixedLenFeature([], tf.int64),
+  #     "input_ids": tf.FixedLenFeature([seq_length], tf.int64),
+  #     "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
+  #     "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
+  # }
+  # TF2
   name_to_features = {
-      "unique_ids": tf.FixedLenFeature([], tf.int64),
-      "input_ids": tf.FixedLenFeature([seq_length], tf.int64),
-      "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
-      "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
+      "unique_ids": tf.io.FixedLenFeature([], tf.int64),
+      "input_ids": tf.io.FixedLenFeature([seq_length], tf.int64),
+      "input_mask": tf.io.FixedLenFeature([seq_length], tf.int64),
+      "segment_ids": tf.io.FixedLenFeature([seq_length], tf.int64),
   }
 
   if is_training:
-    name_to_features["start_positions"] = tf.FixedLenFeature([], tf.int64)
-    name_to_features["end_positions"] = tf.FixedLenFeature([], tf.int64)
-    name_to_features["answer_types"] = tf.FixedLenFeature([], tf.int64)
+    # TF1
+    # name_to_features["start_positions"] = tf.FixedLenFeature([], tf.int64)
+    # name_to_features["end_positions"] = tf.FixedLenFeature([], tf.int64)
+    # name_to_features["answer_types"] = tf.FixedLenFeature([], tf.int64)
+    # TF2
+    name_to_features["start_positions"] = tf.io.FixedLenFeature([], tf.int64)
+    name_to_features["end_positions"] = tf.io.FixedLenFeature([], tf.int64)
+    name_to_features["answer_types"] = tf.io.FixedLenFeature([], tf.int64)
 
   def _decode_record(record, name_to_features):
     """Decodes a record to a TensorFlow example."""
-    example = tf.parse_single_example(record, name_to_features)
+    # example = tf.parse_single_example(record, name_to_features) # TF1
+    example = tf.io.parse_single_example(serialized=record, features=name_to_features) # TF2
 
     # tf.Example only supports tf.int64, but the TPU only supports tf.int32.
     # So cast all int64 to int32.
     for name in list(example.keys()):
       t = example[name]
       if t.dtype == tf.int64:
-        t = tf.to_int32(t)
+        # t = tf.to_int32(t) # TF1
+        t = tf.cast(t, dtype=tf.int32) # TF2
       example[name] = t
 
     return example
@@ -1233,7 +1283,8 @@ class FeatureWriter(object):
     self.filename = filename
     self.is_training = is_training
     self.num_features = 0
-    self._writer = tf.python_io.TFRecordWriter(filename)
+    # self._writer = tf.python_io.TFRecordWriter(filename) # TF1
+    self._writer = tf.io.TFRecordWriter(filename) # TF2
 
   def process_feature(self, feature):
     """Write a InputFeature to the TFRecordWriter as a tf.train.Example."""
@@ -1295,7 +1346,7 @@ def read_candidates_from_one_split(input_path):
   """Read candidates from a single jsonl file."""
   candidates_dict = {}
   with gzip.GzipFile(fileobj=tf.gfile.Open(input_path)) as input_file:
-    tf.logging.info("Reading examples from: %s", input_path)
+    absl.logging.info("Reading examples from: %s", input_path)
     for line in input_file:
       e = json.loads(line)
       candidates_dict[e["example_id"]] = e["long_answer_candidates"]
@@ -1305,8 +1356,9 @@ def read_candidates_from_one_split_mod(input_path):
   """Read candidates from a single jsonl file."""
   candidates_dict = {}
   if input_path.endswith(".gz"):
-    with gzip.GzipFile(fileobj=tf.gfile.Open(input_path)) as input_file:
-      tf.logging.info("Reading examples from: %s", input_path)
+    # with gzip.GzipFile(fileobj=tf.gfile.Open(input_path)) as input_file: # TF1
+    with gzip.GzipFile(fileobj=tf.io.gfile.Open(input_path)) as input_file: # TF2
+      absl.logging.info("Reading examples from: %s", input_path)
       for line in input_file:
         e = json.loads(line)
         candidates_dict[e["example_id"]] = e["long_answer_candidates"]
@@ -1327,7 +1379,8 @@ def read_candidates(input_pattern):
 
 def read_candidates_mod(input_pattern):
   """Read candidates with real multiple processes."""
-  input_paths = tf.gfile.Glob(input_pattern)
+  # input_paths = tf.gfile.Glob(input_pattern) # TF1
+  input_paths = tf.io.gfile.glob(input_pattern) # TF2
   final_dict = {}
   for input_path in input_paths:
     final_dict.update(read_candidates_from_one_split_mod(input_path))
@@ -1421,7 +1474,6 @@ def compute_predictions(example):
 
   return summary
 
-
 def compute_pred_dict(candidates_dict, dev_features, raw_results):
   """Computes official answer key from raw logits."""
   raw_results_by_id = [(int(res["unique_id"] + 1), res) for res in raw_results]
@@ -1431,6 +1483,7 @@ def compute_pred_dict(candidates_dict, dev_features, raw_results):
   all_candidates = candidates_dict.items()
   example_ids = tf.to_int32(np.array([int(k) for k, _ in all_candidates
                                      ])).eval(session=sess)
+  
   examples_by_id = zip(example_ids, all_candidates)
 
   # Cast unique_id also to int32 for features.
@@ -1454,7 +1507,7 @@ def compute_pred_dict(candidates_dict, dev_features, raw_results):
       examples[-1].results[idx] = datum
 
   # Construct prediction objects.
-  tf.logging.info("Computing predictions...")
+  absl.logging.info("Computing predictions...")
   summary_dict = {}
   nq_pred_dict = {}
   for e in examples:
@@ -1462,55 +1515,44 @@ def compute_pred_dict(candidates_dict, dev_features, raw_results):
     summary_dict[e.example_id] = summary
     nq_pred_dict[e.example_id] = summary.predicted_label
     if len(nq_pred_dict) % 100 == 0:
-      tf.logging.info("Examples processed: %d", len(nq_pred_dict))
-  tf.logging.info("Done computing predictions.")
+      absl.logging.info("Examples processed: %d", len(nq_pred_dict))
+  absl.logging.info("Done computing predictions.")
 
   return nq_pred_dict
 
 def compute_pred_dict_mod(candidates_dict, dev_features, raw_results):
-  # Changes adapted from bert_utils.py
   """Computes official answer key from raw logits."""
-  # raw_results_by_id = [(int(res["unique_id"] + 1), res) for res in raw_results]
-  raw_results_by_id = [(int(res.unique_id),1, res) for res in raw_results]
   
+  raw_results_by_id = {int(res["unique_id"]):res for res in raw_results}
+
   # Cast example id to int32 for each example, similarly to the raw results.
-  # sess = tf.Session()
-  # all_candidates = candidates_dict.items()
-  # example_ids = tf.to_int32(np.array([int(k) for k, _ in all_candidates
-  #                                    ])).eval(session=sess)
-  # examples_by_id = zip(example_ids, all_candidates)
-  examples_by_id = [(int(k),0,v) for k, v in candidates_dict.items()]
+  all_candidates = candidates_dict.items()
+  # It works now that I added tf.enable_eager_execution() at the beginning of 
+  # the program if running in tf v1!! .numpy() only works in eager execution.
+  example_ids = tf.cast(np.array([int(k) for k, _ in all_candidates
+                                  ]), dtype=tf.int32).numpy()
+  
+  examples_by_id = dict(zip(example_ids, all_candidates))
 
   # Cast unique_id also to int32 for features.
-  # feature_ids = []
-  # features = []
-  # for f in dev_features:
-  #   feature_ids.append(f.features.feature["unique_ids"].int64_list.value[0] + 1)
-  #   features.append(f.features.feature)
-  # feature_ids = tf.to_int32(np.array(feature_ids)).eval(session=sess)
-  # features_by_id = zip(feature_ids, features)
-  features_by_id = [(int(d['unique_id']),2,d) for d in dev_features] 
+  feature_ids = []
+  features = []
+  for f in dev_features:
+    feature_ids.append(f.features.feature["unique_ids"].int64_list.value[0])
+    features.append(f.features.feature)
+  feature_ids = tf.cast(np.array(feature_ids), dtype=tf.int32).numpy()
+  features_by_id = dict(zip(feature_ids, features))
 
   # Join examplew with features and raw results.
   examples = []
-  merged = sorted(examples_by_id + raw_results_by_id + features_by_id)
-  # for idx, datum in merged:
-  #   if isinstance(datum, tuple):
-  #     examples.append(EvalExample(datum[0], datum[1]))
-  #   elif "token_map" in datum:
-  #     examples[-1].features[idx] = datum
-  #   else:
-  #     examples[-1].results[idx] = datum
-  for idx, type_, datum in merged:
-        if type_==0: #isinstance(datum, list):
-            examples.append(EvalExample(idx, datum))
-        elif type_==2: #"token_map" in datum:
-            examples[-1].features[idx] = datum
-        else:
-            examples[-1].results[idx] = datum
+  for example_id in examples_by_id:
+    example = examples_by_id[example_id]
+    examples.append(EvalExample(example[0], example[1]))
+    examples[-1].features[example_id] = features_by_id[example_id]
+    examples[-1].results[example_id] = raw_results_by_id[example_id]
 
   # Construct prediction objects.
-  tf.logging.info("Computing predictions...")
+  absl.logging.info("Computing predictions...")
   summary_dict = {}
   nq_pred_dict = {}
   for e in examples:
@@ -1518,8 +1560,8 @@ def compute_pred_dict_mod(candidates_dict, dev_features, raw_results):
     summary_dict[e.example_id] = summary
     nq_pred_dict[e.example_id] = summary.predicted_label
     if len(nq_pred_dict) % 100 == 0:
-      tf.logging.info("Examples processed: %d", len(nq_pred_dict))
-  tf.logging.info("Done computing predictions.")
+      absl.logging.info("Examples processed: %d", len(nq_pred_dict))
+  absl.logging.info("Done computing predictions.")
 
   return nq_pred_dict
 
@@ -1554,135 +1596,136 @@ def validate_flags_or_throw(bert_config):
 
 
 def main(_):
-  tf.logging.set_verbosity(tf.logging.INFO)
-  bert_config = modeling.BertConfig.from_json_file(FLAGS.bert_config_file)
-  validate_flags_or_throw(bert_config)
-  tf.gfile.MakeDirs(FLAGS.output_dir)
+  print()
+  # absl.logging.set_verbosity(absl.logging.INFO)
+  # bert_config = modeling.BertConfig.from_json_file(FLAGS.bert_config_file)
+  # validate_flags_or_throw(bert_config)
+  # tf.gfile.MakeDirs(FLAGS.output_dir)
 
-  tokenizer = tokenization.FullTokenizer(
-      vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case)
+  # tokenizer = tokenization.FullTokenizer(
+  #     vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case)
 
-  tpu_cluster_resolver = None
-  if FLAGS.use_tpu and FLAGS.tpu_name:
-    tpu_cluster_resolver = contrib_cluster_resolver.TPUClusterResolver(
-        FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
+  # tpu_cluster_resolver = None
+  # if FLAGS.use_tpu and FLAGS.tpu_name:
+  #   tpu_cluster_resolver = contrib_cluster_resolver.TPUClusterResolver(
+  #       FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
 
-  is_per_host = contrib_tpu.InputPipelineConfig.PER_HOST_V2
-  run_config = contrib_tpu.RunConfig(
-      cluster=tpu_cluster_resolver,
-      master=FLAGS.master,
-      model_dir=FLAGS.output_dir,
-      save_checkpoints_steps=FLAGS.save_checkpoints_steps,
-      tpu_config=contrib_tpu.TPUConfig(
-          iterations_per_loop=FLAGS.iterations_per_loop,
-          num_shards=FLAGS.num_tpu_cores,
-          per_host_input_for_training=is_per_host))
+  # is_per_host = contrib_tpu.InputPipelineConfig.PER_HOST_V2
+  # run_config = contrib_tpu.RunConfig(
+  #     cluster=tpu_cluster_resolver,
+  #     master=FLAGS.master,
+  #     model_dir=FLAGS.output_dir,
+  #     save_checkpoints_steps=FLAGS.save_checkpoints_steps,
+  #     tpu_config=contrib_tpu.TPUConfig(
+  #         iterations_per_loop=FLAGS.iterations_per_loop,
+  #         num_shards=FLAGS.num_tpu_cores,
+  #         per_host_input_for_training=is_per_host))
 
-  num_train_steps = None
-  num_warmup_steps = None
-  if FLAGS.do_train:
-    num_train_features = FLAGS.train_num_precomputed
-    num_train_steps = int(num_train_features / FLAGS.train_batch_size *
-                          FLAGS.num_train_epochs)
+  # num_train_steps = None
+  # num_warmup_steps = None
+  # if FLAGS.do_train:
+  #   num_train_features = FLAGS.train_num_precomputed
+  #   num_train_steps = int(num_train_features / FLAGS.train_batch_size *
+  #                         FLAGS.num_train_epochs)
 
-    num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
+  #   num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
 
-  model_fn = model_fn_builder(
-      bert_config=bert_config,
-      init_checkpoint=FLAGS.init_checkpoint,
-      learning_rate=FLAGS.learning_rate,
-      num_train_steps=num_train_steps,
-      num_warmup_steps=num_warmup_steps,
-      use_tpu=FLAGS.use_tpu,
-      use_one_hot_embeddings=FLAGS.use_tpu)
+  # model_fn = model_fn_builder(
+  #     bert_config=bert_config,
+  #     init_checkpoint=FLAGS.init_checkpoint,
+  #     learning_rate=FLAGS.learning_rate,
+  #     num_train_steps=num_train_steps,
+  #     num_warmup_steps=num_warmup_steps,
+  #     use_tpu=FLAGS.use_tpu,
+  #     use_one_hot_embeddings=FLAGS.use_tpu)
 
-  # If TPU is not available, this falls back to normal Estimator on CPU or GPU.
-  estimator = contrib_tpu.TPUEstimator(
-      use_tpu=FLAGS.use_tpu,
-      model_fn=model_fn,
-      config=run_config,
-      train_batch_size=FLAGS.train_batch_size,
-      predict_batch_size=FLAGS.predict_batch_size)
+  # # If TPU is not available, this falls back to normal Estimator on CPU or GPU.
+  # estimator = contrib_tpu.TPUEstimator(
+  #     use_tpu=FLAGS.use_tpu,
+  #     model_fn=model_fn,
+  #     config=run_config,
+  #     train_batch_size=FLAGS.train_batch_size,
+  #     predict_batch_size=FLAGS.predict_batch_size)
 
-  if FLAGS.do_train:
-    tf.logging.info("***** Running training on precomputed features *****")
-    tf.logging.info("  Num split examples = %d", num_train_features)
-    tf.logging.info("  Batch size = %d", FLAGS.train_batch_size)
-    tf.logging.info("  Num steps = %d", num_train_steps)
-    train_filenames = tf.gfile.Glob(FLAGS.train_precomputed_file)
-    train_input_fn = input_fn_builder(
-        input_file=train_filenames,
-        seq_length=FLAGS.max_seq_length,
-        is_training=True,
-        drop_remainder=True)
-    estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
+  # if FLAGS.do_train:
+  #   absl.logging.info("***** Running training on precomputed features *****")
+  #   absl.logging.info("  Num split examples = %d", num_train_features)
+  #   absl.logging.info("  Batch size = %d", FLAGS.train_batch_size)
+  #   absl.logging.info("  Num steps = %d", num_train_steps)
+  #   train_filenames = tf.gfile.Glob(FLAGS.train_precomputed_file)
+  #   train_input_fn = input_fn_builder(
+  #       input_file=train_filenames,
+  #       seq_length=FLAGS.max_seq_length,
+  #       is_training=True,
+  #       drop_remainder=True)
+  #   estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
 
-  if FLAGS.do_predict:
-    if not FLAGS.output_prediction_file:
-      raise ValueError(
-          "--output_prediction_file must be defined in predict mode.")
+  # if FLAGS.do_predict:
+  #   if not FLAGS.output_prediction_file:
+  #     raise ValueError(
+  #         "--output_prediction_file must be defined in predict mode.")
 
-    eval_examples = read_nq_examples(
-        input_file=FLAGS.predict_file, is_training=False)
-    eval_writer = FeatureWriter(
-        filename=os.path.join(FLAGS.output_dir, "eval.tf_record"),
-        is_training=False)
-    eval_features = []
+  #   eval_examples = read_nq_examples(
+  #       input_file=FLAGS.predict_file, is_training=False)
+  #   eval_writer = FeatureWriter(
+  #       filename=os.path.join(FLAGS.output_dir, "eval.tf_record"),
+  #       is_training=False)
+  #   eval_features = []
 
-    def append_feature(feature):
-      eval_features.append(feature)
-      eval_writer.process_feature(feature)
+  #   def append_feature(feature):
+  #     eval_features.append(feature)
+  #     eval_writer.process_feature(feature)
 
-    num_spans_to_ids = convert_examples_to_features(
-        examples=eval_examples,
-        tokenizer=tokenizer,
-        is_training=False,
-        output_fn=append_feature)
-    eval_writer.close()
-    eval_filename = eval_writer.filename
+  #   num_spans_to_ids = convert_examples_to_features(
+  #       examples=eval_examples,
+  #       tokenizer=tokenizer,
+  #       is_training=False,
+  #       output_fn=append_feature)
+  #   eval_writer.close()
+  #   eval_filename = eval_writer.filename
 
-    tf.logging.info("***** Running predictions *****")
-    tf.logging.info("  Num orig examples = %d", len(eval_examples))
-    tf.logging.info("  Num split examples = %d", len(eval_features))
-    tf.logging.info("  Batch size = %d", FLAGS.predict_batch_size)
-    # Modified - Isaac
-    # for spans, ids in num_spans_to_ids.iteritems():
-    for spans, ids in num_spans_to_ids.items():
-      tf.logging.info("  Num split into %d = %d", spans, len(ids))
+  #   absl.logging.info("***** Running predictions *****")
+  #   absl.logging.info("  Num orig examples = %d", len(eval_examples))
+  #   absl.logging.info("  Num split examples = %d", len(eval_features))
+  #   absl.logging.info("  Batch size = %d", FLAGS.predict_batch_size)
+  #   # Modified - Isaac
+  #   # for spans, ids in num_spans_to_ids.iteritems():
+  #   for spans, ids in num_spans_to_ids.items():
+  #     absl.logging.info("  Num split into %d = %d", spans, len(ids))
 
-    predict_input_fn = input_fn_builder(
-        input_file=eval_filename,
-        seq_length=FLAGS.max_seq_length,
-        is_training=False,
-        drop_remainder=False)
+  #   predict_input_fn = input_fn_builder(
+  #       input_file=eval_filename,
+  #       seq_length=FLAGS.max_seq_length,
+  #       is_training=False,
+  #       drop_remainder=False)
 
-    # If running eval on the TPU, you will need to specify the number of steps.
-    all_results = []
-    for result in estimator.predict(
-        predict_input_fn, yield_single_examples=True):
-      if len(all_results) % 1000 == 0:
-        tf.logging.info("Processing example: %d" % (len(all_results)))
-      unique_id = int(result["unique_ids"])
-      start_logits = [float(x) for x in result["start_logits"].flat]
-      end_logits = [float(x) for x in result["end_logits"].flat]
-      answer_type_logits = [float(x) for x in result["answer_type_logits"].flat]
-      all_results.append(
-          RawResult(
-              unique_id=unique_id,
-              start_logits=start_logits,
-              end_logits=end_logits,
-              answer_type_logits=answer_type_logits))
+  #   # If running eval on the TPU, you will need to specify the number of steps.
+  #   all_results = []
+  #   for result in estimator.predict(
+  #       predict_input_fn, yield_single_examples=True):
+  #     if len(all_results) % 1000 == 0:
+  #       absl.logging.info("Processing example: %d" % (len(all_results)))
+  #     unique_id = int(result["unique_ids"])
+  #     start_logits = [float(x) for x in result["start_logits"].flat]
+  #     end_logits = [float(x) for x in result["end_logits"].flat]
+  #     answer_type_logits = [float(x) for x in result["answer_type_logits"].flat]
+  #     all_results.append(
+  #         RawResult(
+  #             unique_id=unique_id,
+  #             start_logits=start_logits,
+  #             end_logits=end_logits,
+  #             answer_type_logits=answer_type_logits))
 
-    candidates_dict = read_candidates(FLAGS.predict_file)
-    eval_features = [
-        tf.train.Example.FromString(r)
-        for r in tf.python_io.tf_record_iterator(eval_filename)
-    ]
-    nq_pred_dict = compute_pred_dict(candidates_dict, eval_features,
-                                     [r._asdict() for r in all_results])
-    predictions_json = {"predictions": nq_pred_dict.values()}
-    with tf.gfile.Open(FLAGS.output_prediction_file, "w") as f:
-      json.dump(predictions_json, f, indent=4)
+  #   candidates_dict = read_candidates(FLAGS.predict_file)
+  #   eval_features = [
+  #       tf.train.Example.FromString(r)
+  #       for r in tf.io.tf_record_iterator(eval_filename)
+  #   ]
+  #   nq_pred_dict = compute_pred_dict(candidates_dict, eval_features,
+  #                                    [r._asdict() for r in all_results])
+  #   predictions_json = {"predictions": nq_pred_dict.values()}
+  #   with tf.gfile.Open(FLAGS.output_prediction_file, "w") as f:
+  #     json.dump(predictions_json, f, indent=4)
 
 
 if __name__ == "__main__":

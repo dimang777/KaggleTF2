@@ -1296,7 +1296,8 @@ def compute_pred_dict(candidates_dict, dev_features, raw_results):
 
   # Cast example id to int32 for each example, similarly to the raw results.
   all_candidates = candidates_dict.items()
-  example_ids = tf.cast(np.array([int(k) for k, _ in all_candidates]), dtype=tf.int32).numpy()
+  example_ids = tf.cast(
+    np.array([int(k) for k, _ in all_candidates]), dtype=tf.int32).numpy()
   examples_by_id = dict(zip(example_ids, all_candidates))
 
   # Cast unique_id also to int32 for features.
